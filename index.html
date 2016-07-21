@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Terrain Context</title>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="http://dist.geohey.com/g-js/latest/lib/g.css">
+    <script type="text/javascript" src="http://dist.geohey.com/g-js/latest/lib/g.min.js"></script>
+  </head>
+<body style="margin: 0; padding:0; width: 100%; height: 100%; position: absolute;">
+        <div id="map" style="width: 100%; height: 100%; position: absolute;"></div>
+        <script>
+          G.ready(function() {
+            var res = 0.597164283477783;
+            var tilesize = 256;
+            var tile_extent = tilesize * res;
+            var world_originalx = -20037508.342787
+            var world_originaly = 20037508.342787
+
+            function tileIndex(x, y) {
+                xx = Math.floor((x - world_originalx) / tile_extent)
+                yy = Math.floor((world_originaly - y) / tile_extent)
+                return [xx, yy]
+            }
+
+            function showTileExtent(e, layer) {
+                layer.clear();
+
+                [x, y] = tileIndex(e.mapX, e.mapY)
+                // console.log(x)
+                // console.log(y)
+                x0 = world_originalx + tile_extent * x;
+                y0 = world_originaly - tile_extent * y;
+                var g = new G.Graphic.Polygon([[[x0, y0], [x0 + tile_extent, y0], [x0 + tile_extent, y0 - tile_extent], [x0, y0 - tile_extent]]], {}, {
+                    fillColor: '#ff0',
+                    outlineColor: '#0f0',
+                    outlineOpacity: 0.5,
+                    fillOpacity: 0.1
+                });
+                g.addTo(layer);
+            }
+
+            var map = new G.Map('map',{
+                initStatus: {
+                    center: [12963716, 4898001],
+                    res: res,
+                }
+            });
+            var layer1 = new G.Layer.Tile('http://a.tile.openstreetmap.org/{z}/{x}/{y}.png');
+            layer1.addTo(map);
+
+            var layer2 = new G.Layer.Tile('http://192.168.31.241:3030/simple/google/{z}/{x}/{y}/.png', {
+            });
+
+            layer2.addTo(map);
+
+            graphicLayer = new G.Layer.Graphic();
+            graphicLayer.addTo(map);
+
+            map.addListener('click', function(e) {
+                showTileExtent(e, graphicLayer)
+            });
+
+            map.addListener('mousemove', function(e) {
+                showTileExtent(e, graphicLayer)
+            });
+
+            map.zoomRes([12963716, 4898001], res);
+        });
+
+
+
+        </script>
+</body>
+</html>
