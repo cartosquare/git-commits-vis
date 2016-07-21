@@ -18,7 +18,7 @@ import json
 from keras.models import model_from_json
 
 import sys
-caffe_root = '/Users/xuxiang/ml/caffe/'  # this file should be run from {caffe_root}/examples (otherwise change this line)
+caffe_root = '../caffe/'  # this file should be run from {caffe_root}/examples (otherwise change this line)
 sys.path.insert(0, caffe_root + 'python')
 
 import caffe
@@ -35,10 +35,10 @@ app = flask.Flask(__name__)
 
 @app.route('/')
 def index():
-    return '{"version:": 1.0}'
+    return app.send_static_file('index.html')
 
 
-@app.route('/classify_url', methods=['GET'])
+@app.route('/classify', methods=['GET'])
 def classify_url():
     imagename = flask.request.args.get('image', '')
     print imagename

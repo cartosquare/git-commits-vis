@@ -5,9 +5,20 @@
     <meta charset="utf-8" />
     <link rel="stylesheet" href="http://dist.geohey.com/g-js/latest/lib/g.css">
     <script type="text/javascript" src="http://dist.geohey.com/g-js/latest/lib/g.min.js"></script>
+    <script src="/static/jquery.min.js"></script>
   </head>
 <body style="margin: 0; padding:0; width: 100%; height: 100%; position: absolute;">
-        <div id="map" style="width: 100%; height: 100%; position: absolute;"></div>
+        <div id="map" style="absolute: 1; width: 1024px; height: 512px"></div>
+        <br>
+        <div id="c1"></div>
+        <br>
+        <div id="c2"></div>
+        <br>
+        <div id="c3"></div>
+        <br>
+        <div id="c4"></div>
+        <br>
+        <div id="c5"></div>
         <script>
           G.ready(function() {
             var res = 0.597164283477783;
@@ -57,7 +68,25 @@
             graphicLayer.addTo(map);
 
             map.addListener('click', function(e) {
-                showTileExtent(e, graphicLayer)
+                [x, y] = tileIndex(e.mapX, e.mapY)
+                key = x + '_' + y;
+                $.ajax({
+                    url: '/classify?image=' + key,
+                    type: 'GET',
+                    error: function(xhr, textStatus, errorThrown) {
+                        console.error("Error: " + textStatus + " / " + JSON.stringify(errorThrown));
+                    },
+                    success: function(data, textStatus) {
+                        // console.info("Success: " + textStatus + " / " + JSON.stringify(data));
+                        data_obj = JSON.parse(data)
+                        count = 1
+                        for (key in data_obj) {
+                            id = 'c' + count;
+                            document.getElementById(id).innerHTML = key + ' : ' + data_obj[key].toFixed(4);
+                            count += 1;
+                        }
+                    }
+                });
             });
 
             map.addListener('mousemove', function(e) {
@@ -66,9 +95,6 @@
 
             map.zoomRes([12963716, 4898001], res);
         });
-
-
-
         </script>
 </body>
 </html>
