@@ -106,13 +106,17 @@ class TerrainClassifier(object):
         pred = self.model.predict(features)
         a = list(pred[0])
         b = sorted(range(len(a)), key=lambda i: a[i])[-5:]
-        results = {}
+        result = {}
+        result['labels'] = []
         for i in range(1, 6):
             ii = b[5 - i]
-            # if a[ii] > 0.1:
-            results[self.labels_lookup[ii]] = a[ii]
+            res = {}
+            res['label'] = self.labels_lookup[ii]
+            res['prob'] = a[ii]
+            result['labels'].append(res)
 
-        return json.dumps(results, ensure_ascii=False)
+        # return json.dumps(result, ensure_ascii=False)
+        return flask.jsonify(**result)
 
 
 def start_tornado(app, port=5000):
