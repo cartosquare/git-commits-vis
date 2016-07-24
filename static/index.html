@@ -54,11 +54,15 @@
         预测类别:
         <br><br>
         <div class="chart">
-            <div id = 'c1' style="width: 500px; height: 20px"></div>
-            <div id = 'c2' style="width: 500px; height: 20px"></div>
-            <div id = 'c3' style="width: 500px; height: 20px"></div>
-            <div id = 'c4' style="width: 500px; height: 20px"></div>
-            <div id = 'c5' style="width: 500px; height: 20px"></div>
+            <span><div id = 'c1' style="display: inline-block; width: 500px; height: 20px"></div><span id = 't1'>C1</span></span>
+            <br>
+            <span><div id = 'c2' style="display: inline-block; width: 500px; height: 20px"></div><span id = 't2'>C1</span></span>
+            <br>
+            <span><div id = 'c3' style="display: inline-block; width: 500px; height: 20px"></div><span id = 't3'>C1</span></span>
+            <br>
+            <span><div id = 'c4' style="display: inline-block; width: 500px; height: 20px"></div><span id = 't4'>C1</span></span>
+            <br>
+            <span><div id = 'c5' style="display: inline-block; width: 500px; height: 20px"></div><span id = 't5'>C1</span></span>
         </div>
         <script>
           G.ready(function() {
@@ -66,7 +70,7 @@
             // var init_center = [12963716, 4898001]
             var init_center = [12957198, 4853994];
             var vector_map_url = 'http://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
-            var raster_map_server = 'http://localhost:3030/simple/beijing';
+            var raster_map_server = '/tile';
             var similar_server = 'http://localhost:5566';
             var tilesize = 256;
             var tile_extent = tilesize * res;
@@ -102,10 +106,10 @@
                     res: res,
                 }
             });
-            var layer1 = new G.Layer.Tile(vector_map_url);
-            layer1.addTo(map);
+            // var layer1 = new G.Layer.Tile(vector_map_url);
+            // layer1.addTo(map);
 
-            var layer2 = new G.Layer.Tile(raster_map_server + '/{z}/{x}/{y}/.png', {
+            var layer2 = new G.Layer.Tile(raster_map_server + '/{x}/{y}', {
             });
 
             layer2.addTo(map);
@@ -125,8 +129,9 @@
                         data_obj = data;//JSON.parse(data)
                         for (var i = 0; i < data_obj.labels.length; ++i) {
                             id = 'c' + (i + 1);
+                            tid = 't' + (i + 1);
                             pixs = data_obj.labels[i].prob * 500
-                            document.getElementById(id).innerHTML = data_obj.labels[i].label;
+                            document.getElementById(tid).innerHTML = data_obj.labels[i].label;
                             document.getElementById(id).style.width = pixs + 'px'
                         }
                     }
@@ -135,7 +140,7 @@
 
             function updateSimilar(key) {
                 $.ajax({
-                    url: similar_server + '/?filename=' + key + '&limit=10&level=18&region=beijing',
+                    url: similar_server + '/?filename=' + key + '&limit=20&level=18&region=beijing',
                     type: 'GET',
                     error: function(xhr, textStatus, errorThrown) {
                         console.error("Error: " + textStatus + " / " + JSON.stringify(errorThrown));
@@ -146,7 +151,7 @@
                             var filename = data.matches[i].filename;
                             xy = filename.split('_');
 
-                            var image_url = 'http://localhost:3030/simple/beijing/18/' + parseInt(xy[0]) + '/' + parseInt(xy[1]) + '/.png';
+                            var image_url = raster_map_server + '/' + parseInt(xy[0]) + '/' + parseInt(xy[1]);
 
                             id = 'img' + (i + 1);
                             document.getElementById(id).src = image_url;
