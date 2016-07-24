@@ -4,6 +4,7 @@ import cPickle
 import datetime
 import logging
 import flask
+from flask import send_file
 import werkzeug
 import optparse
 import tornado.wsgi
@@ -25,9 +26,7 @@ import caffe
 import leveldb
 from caffe.proto import caffe_pb2
 
-REPO_DIRNAME = os.path.abspath(os.path.dirname(os.path.abspath(__file__)) + '/../terrain-context')
-UPLOAD_FOLDER = '/tmp/caffe_demos_uploads'
-ALLOWED_IMAGE_EXTENSIONS = set(['png', 'bmp', 'jpg', 'jpe', 'jpeg', 'gif'])
+REPO_DIRNAME = '/Users/xuxiang/ml/terrain-context/dist/beijing-demo'
 
 # Obtain the flask app object
 app = flask.Flask(__name__)
@@ -36,6 +35,17 @@ app = flask.Flask(__name__)
 @app.route('/')
 def index():
     return app.send_static_file('index.html')
+
+
+@app.route('/tile/<int:x>/<int:y>')
+def tile(x, y):
+    filename = '{}/google/{}/{}.jpg'.format(REPO_DIRNAME, y, x)
+    if os.path.exists(filename):
+        return send_file(filename, mimetype='image/jpg')
+    else:
+        f = {}
+        f['err'] = 1
+        return flask.jsonify(**f)
 
 
 @app.route('/classify', methods=['GET'])
@@ -48,15 +58,15 @@ def classify_url():
 class TerrainClassifier(object):
     default_args = {
         'tags_file': (
-            '{}/osm_tags/unique_tags.csv'.format(REPO_DIRNAME)),
+            '{}/tags.csv'.format(REPO_DIRNAME)),
         'model_architecture_file': (
-            '{}/models/model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
+            '{}/model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
         'model_weights_file': (
-            '{}/models/model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME)),
+            '{}/model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME)),
         'features_file': (
-            '{}/features/L18_deep_features_bvlc'.format(REPO_DIRNAME)),
+            '{}/L18_deep_features_bvlc'.format(REPO_DIRNAME)),
         'keys_file': (
-            '{}/features/L18_keys'.format(REPO_DIRNAME))
+            '{}/L18_keys'.format(REPO_DIRNAME))
     }
     for key, val in default_args.iteritems():
         if not os.path.exists(val):
@@ -154,6 +164,4 @@ def start_from_terminal(app):
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
     start_from_terminal(app)
