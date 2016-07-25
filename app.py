@@ -26,7 +26,7 @@ import caffe
 import leveldb
 from caffe.proto import caffe_pb2
 
-REPO_DIRNAME = '/Users/xuxiang/ml/terrain-context/dist/beijing-demo'
+REPO_DIRNAME = '/Volumes/first/ml/terrain-context-deploy/beijing-demo'
 
 # Obtain the flask app object
 app = flask.Flask(__name__)
@@ -50,13 +50,20 @@ def tile(x, y):
 
 @app.route('/classify', methods=['GET'])
 def classify_url():
-    imagename = flask.request.args.get('image', '')
-    print imagename
-    return app.clf.classify_image(imagename)
+    z = flask.request.args.get('z', '')
+    x = flask.request.args.get('x', '')
+    y = flask.request.args.get('y', '')
+    return app.clf.classify_image(z, x, y)
 
 
 class TerrainClassifier(object):
     default_args = {
+        'caffe_model_def': (
+            '{}/deploy.prototxt'.format(REPO_DIRNAME)),
+        'caffe_model_weight': (
+            '{}/bvlc_reference_caffenet.caffemodel'.format(REPO_DIRNAME)),
+        'image_subtraction_file': (
+            '{}/ilsvrc_2012_mean.npy'.format(REPO_DIRNAME)),
         'tags_file': (
             '{}/tags.csv'.format(REPO_DIRNAME)),
         'model_architecture_file': (
@@ -73,9 +80,10 @@ class TerrainClassifier(object):
             raise Exception(
                 "File for {} is missing. Should be at: {}".format(key, val))
 
-    def __init__(self, tags_file, model_architecture_file, model_weights_file,
+    def __init__(self, caffe_model_def, caffe_model_weight, image_subtraction_file, tags_file, model_architecture_file, model_weights_file,
                  features_file, keys_file):
         logging.info('Loading net and associated files...')
+        caffe.set_mode_cpu()
 
         # label-lookup
         self.labels_lookup = []
@@ -89,7 +97,27 @@ class TerrainClassifier(object):
                 print count, tag_cn
                 count = count + 1
 
-        # load model
+        # load caffe model
+        self.net = caffe.Net(caffe_model_def, caffe_model_weight, caffe.TEST)
+
+        # load the mean ImageNet image (as distributed with Caffe) for subtraction
+        mu = np.load(image_subtraction_file)
+        mu = mu.mean(1).mean(1)  # average over pixels to obtain the mean (BGR) pixel values
+        print 'mean-subtracted values:', zip('BGR', mu)
+
+        # create transformer for the input called 'data'
+        self.transformer = caffe.io.Transformer({'data': self.net.blobs['data'].data.shape})
+
+        self.transformer.set_transpose('data', (2, 0, 1))  # move image channels to outermost dimension
+        self.transformer.set_mean('data', mu)            # subtract the dataset-mean value in each channel
+        self.transformer.set_raw_scale('data', 255)      # rescale from [0, 1] to [0, 255]
+        self.transformer.set_channel_swap('data', (2, 1, 0))  # swap channels from RGB to BGR
+
+        ### set the size of the input
+        # batch size = 1; 3-channel (BGR) images; image size is 227x227
+        self.net.blobs['data'].reshape(1, 3, 227, 227)
+
+        # load classify model
         self.model = model_from_json(open(model_architecture_file).read())
         self.model.load_weights(model_weights_file)
 
@@ -111,8 +139,26 @@ class TerrainClassifier(object):
         feat = feat.astype('float32')
         return feat
 
-    def classify_image(self, image):
-        features = self.get_image_feature(image)
+    def get_image_feature_from_url(self, image_url):
+        image = caffe.io.load_image(image_url)
+        transformed_image = self.transformer.preprocess('data', image)
+        # copy the image data into the memory allocated for the net
+        self.net.blobs['data'].data[...] = transformed_image
+
+        ### forward calculation
+        self.net.forward()
+        feature = np.transpose(self.net.blobs['fc7'].data[0])
+        feature = np.array([feature])
+        feature = feature.astype('float32')
+        return feature
+
+    def classify_image(self, z, x, y):
+        image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
+        print image_url
+
+        features = self.get_image_feature_from_url(image_url)
+        # features = self.get_image_feature(x + '_' + y)
+
         pred = self.model.predict(features)
         a = list(pred[0])
         b = sorted(range(len(a)), key=lambda i: a[i])[-5:]

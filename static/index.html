@@ -70,7 +70,8 @@
             // var init_center = [12963716, 4898001]
             var init_center = [12957198, 4853994];
             var vector_map_url = 'http://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
-            var raster_map_server = '/tile';
+            var raster_map_server = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&scale=1&';
+
             var similar_server = 'http://localhost:5566';
             var tilesize = 256;
             var tile_extent = tilesize * res;
@@ -109,7 +110,7 @@
             // var layer1 = new G.Layer.Tile(vector_map_url);
             // layer1.addTo(map);
 
-            var layer2 = new G.Layer.Tile(raster_map_server + '/{x}/{y}', {
+            var layer2 = new G.Layer.Tile(raster_map_server + 'x={x}&y={y}&z={z}', {
             });
 
             layer2.addTo(map);
@@ -117,9 +118,9 @@
             graphicLayer = new G.Layer.Graphic();
             graphicLayer.addTo(map);
 
-            function updateLabels(key) {
+            function updateLabels(x, y) {
                 $.ajax({
-                    url: '/classify?image=' + key,
+                    url: '/classify?z=18&x=' + x + '&y=' + y,
                     type: 'GET',
                     error: function(xhr, textStatus, errorThrown) {
                         console.error("Error: " + textStatus + " / " + JSON.stringify(errorThrown));
@@ -151,7 +152,7 @@
                             var filename = data.matches[i].filename;
                             xy = filename.split('_');
 
-                            var image_url = raster_map_server + '/' + parseInt(xy[0]) + '/' + parseInt(xy[1]);
+                            var image_url = raster_map_server + '&z=18&x=' + parseInt(xy[0]) + '&y=' + parseInt(xy[1]);
 
                             id = 'img' + (i + 1);
                             document.getElementById(id).src = image_url;
@@ -163,8 +164,8 @@
             map.addListener('click', function(e) {
                 [x, y] = tileIndex(e.mapX, e.mapY)
                 key = x + '_' + y;
-                updateLabels(key);
-                updateSimilar(key);
+                updateLabels(x, y);
+                // updateSimilar(key);
             });
 
             map.addListener('mousemove', function(e) {
