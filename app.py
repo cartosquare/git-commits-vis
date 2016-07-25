@@ -16,6 +16,9 @@ import cStringIO as StringIO
 import urllib
 import exifutil
 import json
+import cPickle
+import urllib2
+from sklearn.externals import joblib
 from keras.models import model_from_json
 
 import sys
@@ -49,11 +52,33 @@ def tile(x, y):
 
 
 @app.route('/classify', methods=['GET'])
-def classify_url():
+def classify():
     z = flask.request.args.get('z', '')
     x = flask.request.args.get('x', '')
     y = flask.request.args.get('y', '')
     return app.clf.classify_image(z, x, y)
+
+
+@app.route('/similar', methods=['GET'])
+def similar():
+    z = flask.request.args.get('z', '')
+    x = flask.request.args.get('x', '')
+    y = flask.request.args.get('y', '')
+    n = flask.request.args.get('limit', '')
+    r = flask.request.args.get('region', '')
+    features = app.clf.get_tile_feature(z, x, y)
+    url = 'http://localhost:5566/similar/v2'
+    feature_json = {}
+    feature_json['feature'] = features[0].tolist()
+
+    data = urllib.urlencode({
+        'limit': n,
+        'region': r,
+        'feature': json.dumps(feature_json)
+    })
+
+    content = urllib2.urlopen(url=url, data=data).read()
+    return flask.Response(content, mimetype='application/json')
 
 
 class TerrainClassifier(object):
@@ -139,7 +164,9 @@ class TerrainClassifier(object):
         feat = feat.astype('float32')
         return feat
 
-    def get_image_feature_from_url(self, image_url):
+    def get_tile_feature(self, z, x, y):
+        image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
+        # print image_url
         image = caffe.io.load_image(image_url)
         transformed_image = self.transformer.preprocess('data', image)
         # copy the image data into the memory allocated for the net
@@ -153,10 +180,7 @@ class TerrainClassifier(object):
         return feature
 
     def classify_image(self, z, x, y):
-        image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
-        print image_url
-
-        features = self.get_image_feature_from_url(image_url)
+        features = self.get_tile_feature(z, x, y)
         # features = self.get_image_feature(x + '_' + y)
 
         pred = self.model.predict(features)
@@ -168,7 +192,7 @@ class TerrainClassifier(object):
             ii = b[5 - i]
             res = {}
             res['label'] = self.labels_lookup[ii]
-            res['prob'] = a[ii]
+            res['prob'] = str(a[ii])
             result['labels'].append(res)
 
         # return json.dumps(result, ensure_ascii=False)
