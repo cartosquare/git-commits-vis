@@ -4,6 +4,7 @@ import cPickle
 import datetime
 import logging
 import flask
+from flask_cors import CORS, cross_origin
 from flask import send_file
 import werkzeug
 import optparse
@@ -19,6 +20,7 @@ import json
 import cPickle
 import urllib2
 from sklearn.externals import joblib
+import skimage.io
 from keras.models import model_from_json
 
 import sys
@@ -30,10 +32,11 @@ import leveldb
 from caffe.proto import caffe_pb2
 
 REPO_DIRNAME = '/Volumes/first/ml/terrain-context-deploy/beijing-demo'
+#REPO_DIRNAME = '/Volumes/first/bj_demo'
 
 # Obtain the flask app object
 app = flask.Flask(__name__)
-
+CORS(app)
 
 @app.route('/')
 def index():
@@ -81,6 +84,24 @@ def similar():
     return flask.Response(content, mimetype='application/json')
 
 
+@app.route('/terrain-context', methods=['GET'])
+def terrain_context():
+    z = flask.request.args.get('z', '')
+    x = flask.request.args.get('x', '')
+    y = flask.request.args.get('y', '')
+    n = flask.request.args.get('limit', '')
+    r = flask.request.args.get('region', '')
+    return app.clf.classify_and_search_similar(z, x, y, n, r)
+
+
+@app.route('/crop', methods=['GET'])
+def merge_crop():
+    z = flask.request.args.get('z', '')
+    x = flask.request.args.get('x', '')
+    y = flask.request.args.get('y', '')
+    return app.clf.merge_and_crop_image(int(z), float(x), float(y))
+
+
 class TerrainClassifier(object):
     default_args = {
         'caffe_model_def': (
@@ -90,23 +111,25 @@ class TerrainClassifier(object):
         'image_subtraction_file': (
             '{}/ilsvrc_2012_mean.npy'.format(REPO_DIRNAME)),
         'tags_file': (
-            '{}/tags.csv'.format(REPO_DIRNAME)),
+            '{}/tags_70.csv'.format(REPO_DIRNAME)),
         'model_architecture_file': (
-            '{}/model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
+            '{}/tags_70_model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
         'model_weights_file': (
-            '{}/model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME)),
-        'features_file': (
-            '{}/L18_deep_features_bvlc'.format(REPO_DIRNAME)),
-        'keys_file': (
-            '{}/L18_keys'.format(REPO_DIRNAME))
+            '{}/tags_70_model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME))
     }
+
     for key, val in default_args.iteritems():
         if not os.path.exists(val):
             raise Exception(
                 "File for {} is missing. Should be at: {}".format(key, val))
 
-    def __init__(self, caffe_model_def, caffe_model_weight, image_subtraction_file, tags_file, model_architecture_file, model_weights_file,
-                 features_file, keys_file):
+    def __init__(self, caffe_model_def, caffe_model_weight, image_subtraction_file, tags_file, model_architecture_file, model_weights_file):
+        self.res = 0.597164283477783
+        self.tilesize = 256
+        self.tile_extent = self.tilesize * self.res
+        self.world_originalx = -20037508.342787
+        self.world_originaly = 20037508.342787
+
         logging.info('Loading net and associated files...')
         caffe.set_mode_cpu()
 
@@ -149,38 +172,118 @@ class TerrainClassifier(object):
         # finally, before it can be used, the model shall be compiled.
         self.model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 
-        # open feature database
-        self.features_db = leveldb.LevelDB(features_file)
+    def merge_and_crop_image(self, z, x, y):
+        row = int((x - self.world_originalx) / self.tile_extent)
+        col = int((self.world_originaly - y) / self.tile_extent)
+        x_center = self.world_originalx + self.tile_extent * (row + 0.5)
+        y_center = self.world_originaly - self.tile_extent * (col + 0.5)
 
-        # open key database
-        self.keys_db = leveldb.LevelDB(keys_file)
+        if x <= x_center:
+            if y >= y_center:
+                # left-top corner
+                print 'left-top corner'
+                r1 = r3 = row - 1
+                r2 = r4 = row
+                c1 = c2 = col - 1
+                c3 = c4 = col
+            else:
+                # left-bottom corner
+                print 'left-bottom corner'
+                r1 = r3 = row - 1
+                r2 = r4 = row
+                c1 = c2 = col
+                c3 = c4 = col + 1
+        else:
+            if y >= y_center:
+                # right-top corner
+                print 'right-top corner'
+                r1 = r3 = row
+                r2 = r4 = row + 1
+                c1 = c2 = col - 1
+                c3 = c4 = col
+            else:
+                # right-bottom corner
+                print 'right-bottom corner'
+                r1 = r3 = row
+                r2 = r4 = row + 1
+                c1 = c2 = col
+                c3 = c4 = col + 1
 
-    def get_image_feature(self, image_name):
-        key = self.keys_db.Get(image_name)
-        datum = caffe_pb2.Datum.FromString(self.features_db.Get(key))
-        data = caffe.io.datum_to_array(datum)
-        feat = np.transpose(data[:, 0])[0]
-        feat = np.array([feat])
-        feat = feat.astype('float32')
-        return feat
+        url1 = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (r1, c1, z)
+        url2 = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (r2, c2, z)
+        url3 = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (r3, c3, z)
+        url4 = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (r4, c4, z)
 
-    def get_tile_feature(self, z, x, y):
-        image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
+        image1 = Image.open(StringIO.StringIO(urllib.urlopen(url1).read()))
+        # image1.save("img1.png", "PNG")
+
+        image2 = Image.open(StringIO.StringIO(urllib.urlopen(url2).read()))
+        # image2.save("img2.png", "PNG")
+
+        image3 = Image.open(StringIO.StringIO(urllib.urlopen(url3).read()))
+        # image3.save("img3.png", "PNG")
+
+        image4 = Image.open(StringIO.StringIO(urllib.urlopen(url4).read()))
+        # image4.save("img4.png", "PNG")
+
+        merged_image = Image.new('RGB', (512, 512))
+        merged_image.paste(image1, (0, 0))
+        merged_image.paste(image2, (256, 0))
+        merged_image.paste(image3, (0, 256))
+        merged_image.paste(image4, (256, 256))
+        # merged_image.save("img_merge.png", "PNG")
+
+        # crop
+        crop_originx = x - self.tile_extent / 2.0
+        crop_originy = y + self.tile_extent / 2.0
+        print 'crop map origin: ', crop_originx, crop_originy
+
+        merged_image_originalx = self.world_originalx + self.tile_extent * r1
+        merged_image_originaly = self.world_originaly - self.tile_extent * c1
+        print 'merged image origin: ', merged_image_originalx, merged_image_originaly
+
+        crop_x = int((crop_originx - merged_image_originalx) / self.res)
+        crop_y = int((merged_image_originaly - crop_originy) / self.res)
+        # print 'crop pixel origin: ', crop_x, crop_y
+        if crop_x + 256 > 512:
+            print 'invalid crop x'
+        if crop_y + 256 > 512:
+            print 'invalid crop y'
+
+        crop_image = merged_image.crop((crop_x, crop_y, 256 + crop_x, 256 + crop_y))
+        # crop_image.save("img_crop.png", "PNG")
+
+        img = skimage.img_as_float(crop_image).astype(np.float32)
+        # print img.ndim
+
+        img = np.tile(img, (1, 1, 3))
+
+        return img
+
+    def get_tile_feature(self, z, x, y, layer_name):
+        # image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
         # print image_url
-        image = caffe.io.load_image(image_url)
+        # image = caffe.io.load_image(image_url)
+        image = self.merge_and_crop_image(z, float(x), float(y))
         transformed_image = self.transformer.preprocess('data', image)
         # copy the image data into the memory allocated for the net
         self.net.blobs['data'].data[...] = transformed_image
 
         ### forward calculation
         self.net.forward()
-        feature = np.transpose(self.net.blobs['fc7'].data[0])
-        feature = np.array([feature])
-        feature = feature.astype('float32')
-        return feature
+
+        # collect the layers
+        features = {}
+        for layer in layer_name:
+            feat = np.transpose(self.net.blobs[layer].data[0])
+            feat = np.array([feat])
+            feat = feat.astype('float32')
+            features[layer] = feat
+
+        return features
 
     def classify_image(self, z, x, y):
-        features = self.get_tile_feature(z, x, y)
+        features = self.get_tile_feature(z, x, y, ['fc7'])
         # features = self.get_image_feature(x + '_' + y)
 
         pred = self.model.predict(features)
@@ -196,6 +299,36 @@ class TerrainClassifier(object):
             result['labels'].append(res)
 
         # return json.dumps(result, ensure_ascii=False)
+        return flask.jsonify(**result)
+
+    def classify_and_search_similar(self, z, x, y, limit, region):
+        features = self.get_tile_feature(z, x, y, ['fc7', 'fc7'])
+
+        # classify
+        pred = self.model.predict(features['fc7'])
+        a = list(pred[0])
+        b = sorted(range(len(a)), key=lambda i: a[i])[-5:]
+        result = {}
+        result['labels'] = []
+        for i in range(1, 6):
+            ii = b[5 - i]
+            res = {}
+            res['label'] = self.labels_lookup[ii]
+            res['prob'] = str(a[ii])
+            result['labels'].append(res)
+
+        # search similar
+        url = 'http://localhost:5566/similar/v2'
+        feature_json = {}
+        feature_json['feature'] = features['fc7'][0].tolist()
+        data = urllib.urlencode({
+            'limit': limit,
+            'region': region,
+            'feature': json.dumps(feature_json)
+        })
+
+        content = urllib2.urlopen(url=url, data=data).read()
+        result['similars'] = content
         return flask.jsonify(**result)
 
 

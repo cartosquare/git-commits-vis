@@ -68,7 +68,7 @@
           G.ready(function() {
             var res = 0.597164283477783;
             // var init_center = [12963716, 4898001]
-            var init_center = [12957198, 4853994];
+            var init_center = [12949157, 4886160];
             var vector_map_url = 'http://a.tile.openstreetmap.org/{z}/{x}/{y}.png';
             var raster_map_server = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&scale=1&';
 
@@ -86,12 +86,24 @@
             function showTileExtent(e, layer) {
                 layer.clear();
 
+                /*
                 [x, y] = tileIndex(e.mapX, e.mapY)
                 // console.log(x)
                 // console.log(y)
                 x0 = world_originalx + tile_extent * x;
                 y0 = world_originaly - tile_extent * y;
+
                 var g = new G.Graphic.Polygon([[[x0, y0], [x0 + tile_extent, y0], [x0 + tile_extent, y0 - tile_extent], [x0, y0 - tile_extent]]], {}, {
+                    fillColor: '#ff0',
+                    outlineColor: '#0f0',
+                    outlineOpacity: 0.5,
+                    fillOpacity: 0.1
+                });
+                */
+                x0 = e.mapX
+                y0 = e.mapY
+                offset = tile_extent / 2.0
+                var g = new G.Graphic.Polygon([[[x0 - offset, y0 + offset], [x0 + offset, y0 + offset], [x0 + offset, y0 - offset], [x0 - offset, y0 - offset]]], {}, {
                     fillColor: '#ff0',
                     outlineColor: '#0f0',
                     outlineOpacity: 0.5,
@@ -103,7 +115,7 @@
             var map = new G.Map('map',{
                 initStatus: {
                     center: init_center,
-                    res: res,
+                    res: res * 2,
                 }
             });
             // var layer1 = new G.Layer.Tile(vector_map_url);
@@ -117,6 +129,36 @@
             graphicLayer = new G.Layer.Graphic();
             graphicLayer.addTo(map);
 
+            function update_terrain_context(x, y) {
+                $.ajax({
+                    url: '/terrain-context?z=18&x=' + x + '&y=' + y + '&limit=10&region=beijing',
+                    type: 'GET',
+                    error: function(xhr, textStatus, errorThrown) {
+                        console.error("Error: " + textStatus + " / " + JSON.stringify(errorThrown));
+                    },
+                    success: function(data, textStatus) {
+                        // console.info("Success: " + textStatus + " / " + JSON.stringify(data));
+                        labels = data.labels;//JSON.parse(data)
+                        for (var i = 0; i < labels.length; ++i) {
+                            id = 'c' + (i + 1);
+                            tid = 't' + (i + 1);
+                            pixs = labels[i].prob * 500
+                            document.getElementById(tid).innerHTML = labels[i].label;
+                            document.getElementById(id).style.width = pixs + 'px'
+                        }
+                        similars = JSON.parse(data.similars)
+                        for (var i = 0; i < similars.matches.length; ++i) {
+                            var filename = similars.matches[i].filename;
+                            xy = filename.split('_');
+
+                            var image_url = raster_map_server + '&z=18&x=' + parseInt(xy[0]) + '&y=' + parseInt(xy[1]);
+
+                            id = 'img' + (i + 1);
+                            document.getElementById(id).src = image_url;
+                        }
+                    }
+                });
+            }
             function updateLabels(x, y) {
                 $.ajax({
                     url: '/classify?z=18&x=' + x + '&y=' + y,
@@ -137,7 +179,18 @@
                     }
                 });
             }
-
+            function crop(x, y) {
+                $.ajax({
+                    url: '/crop?z=18&x=' + x + '&y=' + y,
+                    type: 'GET',
+                    error: function(xhr, textStatus, errorThrown) {
+                        console.error("Error: " + textStatus + " / " + JSON.stringify(errorThrown));
+                    },
+                    success: function(data, textStatus) {
+                        console.info("Success: " + textStatus + " / " + data);
+                    }
+                });
+            }
             function updateSimilar(x, y) {
                 $.ajax({
                     url: '/similar?z=18&x=' + x + '&y=' + y + '&limit=10&region=beijing',
@@ -161,17 +214,15 @@
             }
 
             map.addListener('click', function(e) {
-                [x, y] = tileIndex(e.mapX, e.mapY)
-                // key = x + '_' + y;
-                updateLabels(x, y);
-                updateSimilar(x, y);
+                update_terrain_context(e.mapX, e.mapY);
+                // crop(e.mapX, e.mapY)
             });
 
             map.addListener('mousemove', function(e) {
                 showTileExtent(e, graphicLayer)
             });
 
-            map.zoomRes(init_center, res);
+            map.zoomRes(init_center, res * 2);
         });
         </script>
 </body>
