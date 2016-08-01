@@ -6,8 +6,10 @@ import logging
 import flask
 from flask_cors import CORS, cross_origin
 from flask import send_file
+from flask import request
 import werkzeug
 import optparse
+import re
 import tornado.wsgi
 import tornado.httpserver
 import numpy as np
@@ -37,6 +39,7 @@ REPO_DIRNAME = '/Volumes/first/ml/terrain-context-deploy/beijing-demo'
 # Obtain the flask app object
 app = flask.Flask(__name__)
 CORS(app)
+
 
 @app.route('/')
 def index():
@@ -94,6 +97,20 @@ def terrain_context():
     return app.clf.classify_and_search_similar(z, x, y, n, r)
 
 
+@app.route('/v2/terrain-context', methods=['POST'])
+def terrain_context_v2():
+    # print 'request incoming...'
+    z = int(request.form['level'])
+
+    x = float(request.form['x'])
+    y = float(request.form['y'])
+    n = int(request.form['limit'])
+    r = str(request.form['region'])
+    base64_image = request.form['image']
+    # print z, x, y, n, r
+    return app.clf.classify_and_search_similar(base64_image, z, x, y, n, r)
+
+
 @app.route('/crop', methods=['GET'])
 def merge_crop():
     z = flask.request.args.get('z', '')
@@ -111,11 +128,11 @@ class TerrainClassifier(object):
         'image_subtraction_file': (
             '{}/ilsvrc_2012_mean.npy'.format(REPO_DIRNAME)),
         'tags_file': (
-            '{}/tags_70.csv'.format(REPO_DIRNAME)),
+            '{}/tags_67.csv'.format(REPO_DIRNAME)),
         'model_architecture_file': (
-            '{}/tags_70_model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
+            '{}/tags_67_model_architecture_bvlc_fc7.json'.format(REPO_DIRNAME)),
         'model_weights_file': (
-            '{}/tags_70_model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME))
+            '{}/tags_67_model_weights_bvlc_fc7.h5'.format(REPO_DIRNAME))
     }
 
     for key, val in default_args.iteritems():
@@ -181,14 +198,14 @@ class TerrainClassifier(object):
         if x <= x_center:
             if y >= y_center:
                 # left-top corner
-                print 'left-top corner'
+                # print 'left-top corner'
                 r1 = r3 = row - 1
                 r2 = r4 = row
                 c1 = c2 = col - 1
                 c3 = c4 = col
             else:
                 # left-bottom corner
-                print 'left-bottom corner'
+                # print 'left-bottom corner'
                 r1 = r3 = row - 1
                 r2 = r4 = row
                 c1 = c2 = col
@@ -196,14 +213,14 @@ class TerrainClassifier(object):
         else:
             if y >= y_center:
                 # right-top corner
-                print 'right-top corner'
+                # print 'right-top corner'
                 r1 = r3 = row
                 r2 = r4 = row + 1
                 c1 = c2 = col - 1
                 c3 = c4 = col
             else:
                 # right-bottom corner
-                print 'right-bottom corner'
+                # print 'right-bottom corner'
                 r1 = r3 = row
                 r2 = r4 = row + 1
                 c1 = c2 = col
@@ -236,11 +253,11 @@ class TerrainClassifier(object):
         # crop
         crop_originx = x - self.tile_extent / 2.0
         crop_originy = y + self.tile_extent / 2.0
-        print 'crop map origin: ', crop_originx, crop_originy
+        # print 'crop map origin: ', crop_originx, crop_originy
 
         merged_image_originalx = self.world_originalx + self.tile_extent * r1
         merged_image_originaly = self.world_originaly - self.tile_extent * c1
-        print 'merged image origin: ', merged_image_originalx, merged_image_originaly
+        # print 'merged image origin: ', merged_image_originalx, merged_image_originaly
 
         crop_x = int((crop_originx - merged_image_originalx) / self.res)
         crop_y = int((merged_image_originaly - crop_originy) / self.res)
@@ -260,12 +277,15 @@ class TerrainClassifier(object):
 
         return img
 
-    def get_tile_feature(self, z, x, y, layer_name):
-        # image_url = 'http://mt2.google.cn/vt/lyrs=s&hl=zh-CN&gl=cn&x=%s&y=%s&z=%s&scale=1' % (x, y, z)
-        # print image_url
-        # image = caffe.io.load_image(image_url)
-        image = self.merge_and_crop_image(z, float(x), float(y))
-        transformed_image = self.transformer.preprocess('data', image)
+    def get_tile_feature(self, base64_image, z, x, y, layer_name):
+        imgstr = re.search(r'base64,(.*)', base64_image).group(1)
+        image = Image.open(StringIO.StringIO(imgstr.decode('base64')))
+        # image.save("back.png", "PNG")
+
+        img = skimage.img_as_float(image).astype(np.float32)
+        img = np.tile(img, (1, 1, 3))
+
+        transformed_image = self.transformer.preprocess('data', img)
         # copy the image data into the memory allocated for the net
         self.net.blobs['data'].data[...] = transformed_image
 
@@ -301,8 +321,8 @@ class TerrainClassifier(object):
         # return json.dumps(result, ensure_ascii=False)
         return flask.jsonify(**result)
 
-    def classify_and_search_similar(self, z, x, y, limit, region):
-        features = self.get_tile_feature(z, x, y, ['fc7', 'fc7'])
+    def classify_and_search_similar(self, base64_image, z, x, y, limit, region):
+        features = self.get_tile_feature(base64_image, z, x, y, ['fc7', 'fc7'])
 
         # classify
         pred = self.model.predict(features['fc7'])
@@ -316,7 +336,6 @@ class TerrainClassifier(object):
             res['label'] = self.labels_lookup[ii]
             res['prob'] = str(a[ii])
             result['labels'].append(res)
-
         # search similar
         url = 'http://localhost:5566/similar/v2'
         feature_json = {}
