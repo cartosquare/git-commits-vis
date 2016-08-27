@@ -1,0 +1,3 @@
+[submodule "gitstats"]
+	path = gitstats
+	url = git://github.com/hoxu/gitstats.git
